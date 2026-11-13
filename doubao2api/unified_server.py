@@ -1770,6 +1770,16 @@ def create_app(
 
         actual_logged_in = client.is_ready and login_btn_count == 0
 
+        # 若登录按钮已消失但 is_ready 仍为 False（例如用户在无头窗口里手动
+        # 用手机号/抖音登录），主动刷新登录态，使状态与概览能及时反映已登录，
+        # 无需重启服务或再触发 /auth/login。
+        if login_btn_count == 0 and not client.is_ready:
+            try:
+                await client.refresh_login_state()
+                actual_logged_in = client.is_ready
+            except Exception as exc:
+                log.warning("refresh_login_state failed: %s", exc)
+
         return {
             "logged_in": actual_logged_in,
             "is_ready_flag": client.is_ready,
@@ -1924,9 +1934,13 @@ def run_server():
 
     app = create_app(api_key=api_key or None, rpm_limit=rpm)
 
+    # 0.0.0.0 是实际的监听绑定地址，但浏览器无法点击打开；展示地址时替换为
+    # 127.0.0.1，使日志里的 Admin page 链接可直接点击（不影响真实 bind）。
+    display_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+
     print(f"\n  Doubao API Server (Playwright)")
     print(f"  Listening on http://{host}:{port}")
-    print(f"  Admin page: http://{host}:{port}/admin")
+    print(f"  Admin page: http://{display_host}:{port}/admin")
     if novnc_url:
         print(f"  noVNC: {novnc_url}")
     if api_key:

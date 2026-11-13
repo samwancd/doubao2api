@@ -207,6 +207,20 @@ class BrowserClient:
         await self._wait_for_signing()  # still needed for upload endpoints
         log.info("Ready! device_id=%s, fetch_hook=%s", self._device_id, self._bridge_ready)
 
+    async def refresh_login_state(self) -> bool:
+        """Re-check login state and update ``_ready``.
+
+        Useful when login may have changed outside the normal flow, e.g. the
+        user logging in manually through a visible (non-headless) browser
+        window. The status endpoints call this so the "logged in" state is
+        reflected without requiring a restart or a ``/auth/login`` trigger.
+        """
+        if not hasattr(self, "_refresh_lock"):
+            self._refresh_lock = asyncio.Lock()
+        async with self._refresh_lock:
+            await self._check_login_state()
+        return self._ready
+
     async def _extract_params(self):
         """Extract device_id, web_id, fp from localStorage/cookies."""
         for _ in range(5):

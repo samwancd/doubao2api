@@ -66,6 +66,7 @@
   - [Session 过期与风控检测](#session-过期与风控检测)
   - [msToken 与风控](#mstoken-与风控)
   - [搜索工具调用捕获](#搜索工具调用捕获)
+  - [工具调用（Tool Calling）](#工具调用tool-calling)
 - [项目结构](#项目结构)
 
 ## 这个项目能做什么
@@ -80,6 +81,8 @@
 - **文件中转站**（奇淫技巧）：通过 `/v1/files` 可上传任意文件（最大 1GB）获得一个永久 TOS URI，之后随时凭这个 URI 调用 `/v1/files/download` 换取 7 天有效的下载链接，过期了再换一个就行。这意味着你可以把它当作**免费的跨机器文件传输通道**——Agent A 在服务器 A 上传文件拿到 URI，把 URI 传给 Agent B，Agent B 在另一台服务器上凭 URI 获取下载链接直接拉取文件。无需自建 OSS，无需打通内网，单文件最大 1GB，存储不过期。有兴趣的兄弟可以基于这个开做个文件中转，感觉会很不错
 
 ⚠️ **不适合编程智能体**：豆包客户端模型**不支持 Function Calling / Tool Use**（无法调用外部工具如文件读写、终端命令、代码搜索等），因此**不适合**作为编程智能体（Claude Code、Codex、OpenCode 等）的后端模型。如果你需要的是能操作代码仓库的 coding agent，请选择原生支持工具调用的模型 API。
+
+> 📌 **更新（2026-11-13）**：上述「不支持」表述已过时。自 `tool_calling.py` 合入后，接口层**已支持** OpenAI 格式的 `tool_calls`（通过提示词注入模拟）。详见 [工具调用（Tool Calling）](#工具调用tool-calling) 与 [能力实测报告](docs/tool-calling-verification-2026-11-13.md)。
 
 ## 原理
 
@@ -2036,6 +2039,15 @@ Admin 面板会合并多次增量搜索结果，并显示关键词、来源和�
 | 10040 | 思维链分隔符 | 状态机切换 thinking/answer |
 | 10052 | 附件块（图片上传） | 仅用于请求构建 |
 | 10101 | 加载状态块（loading_block） | 提取 text → tool_info |
+
+### 工具调用（Tool Calling）
+
+doubao2api 在接口层实现了 OpenAI 兼容的工具调用（`tools` / `tool_choice` → 标准 `tool_calls`）。
+
+- **机制**：带 `tools` 的请求会路由到 expert 模型，`tool_calling.py` 将工具定义**注入提示词**；模型以 `<tool_call>{"name":...,"arguments":{...}}</tool_call>` 标签输出，再由 `parse_tool_calls_xml()` 还原为 OpenAI 格式的 `tool_calls`（非流式返回 `finish_reason: "tool_calls"`，流式构造 `tool_call` chunks）。这是**提示词模拟**，不是底层端点的原生结构化输出。
+- **适用性**：调用方可正常传 `tools` 并拿到 `tool_calls`；但作为 prompt 模拟，存在选错工具、忽略工具、超时与上游限流等稳定性风险，**不适合对可靠性要求极高的长链路编程智能体直接投入生产**。
+
+> 📊 **实测数据（2026-11-13，46 轮）**：可用 tool_calls 产出率 **91.3%**，精确命中率 **76.1%**，另有选错工具 / 超时 / 限流等失败模式。完整方法与逐轮明细见 [工具调用能力实测报告](docs/tool-calling-verification-2026-11-13.md)。
 
 ## 项目结构
 
